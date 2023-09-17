@@ -6,9 +6,20 @@ import { Textarea } from "./ui/textarea";
 import { ChangeEvent, FormEvent, useMemo, useRef, useState } from "react";
 import { getFFmpeg } from "@/lib/ffmpeg";
 import { fetchFile } from "@ffmpeg/util";
+import { api } from "@/lib/axios";
+
+type Status = "waiting" | "converting" | "uploading" | "generating" | "success"
+
+const statusMessage = {
+    converting: "Convertendo...",
+    generating: "Transcrevendo...",
+    uploading: "Carregando...",
+    success: "Sucesso!"
+}
 
 export function VideoInputForm () {
     const [ videoFile, setVideoFile ] = useState<File | null>(null);
+    const [status, setStatus] = useState<Status>("waiting")
     const promptInputRef = useRef<HTMLTextAreaElement>(null) // acessar o valor da textarea
 
     function handleFileSelected(event: ChangeEvent<HTMLInputElement>) {
@@ -74,9 +85,29 @@ export function VideoInputForm () {
         }
 
         // converter vídeo em áudio
+        setStatus("converting")
+
         const audioFile = await convertVideoToAudio(videoFile)
 
-        console.log(audioFile)
+        // fazer o upload do vídeo como back-end
+        const data = new FormData(); // o arquivo a ser enviado precisa ser um form
+
+        data.append("file", audioFile);
+
+        setStatus("uploading")
+
+        const response = await api.post("/videos", data);
+
+        // gerar transcrição
+        const videoId = response.data.video.id;
+
+        setStatus("generating")
+
+        await api.post(`/videos/${videoId}/transcription`, {
+            prompt
+        });
+
+        setStatus("success")
     }
 
     const previewURL = useMemo(() => {
@@ -124,9 +155,13 @@ export function VideoInputForm () {
                 />
             </div>
 
-            <Button type="submit" className="w-full">
-              Carregar vídeo
-              <Upload className="w-4 h-4 ml-2"/>
+            <Button disabled={status !== "waiting"} type="submit" className={"w-full"}>
+              {status === "waiting" ? (
+                <>
+                    Carregar vídeo
+                    <Upload className="w-4 h-4 ml-2"/>
+                </>
+              ) : statusMessage[status]}
             </Button>
           </form>
     )
